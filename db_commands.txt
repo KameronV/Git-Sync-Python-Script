@@ -1,0 +1,13 @@
+USE logging_db;
+
+CREATE TABLE logs
+(
+	id INT AUTO_INCREMENT PRIMARY KEY,
+    created_at LONGTEXT,
+    log_level VARCHAR(10),
+    message LONGTEXT
+);
+
+SELECT * FROM logs;
+
+DROP TABLE logs;
