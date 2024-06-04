@@ -1,7 +1,7 @@
 import logging
 import os
 import datetime
-import time
+import requests
 
 from flask import Flask, request, jsonify, session, redirect, render_template
 from requests_oauthlib import OAuth2Session
@@ -25,8 +25,10 @@ app.secret_key = os.urandom(24)  # Random secret key for session
 @app.route('/')
 def index():
     if 'client_id' not in session or 'client_secret' not in session:
+        log.info("Getting GitHub OAuth credentials..")
         return render_template('credentials_form.html')
     
+    log.info("Successfully got GitHub OAuth credentials")
     github = OAuth2Session(session['client_id'], scope='repo')
     authorization_url, state = github.authorization_url(AUTHORIZATION_BASE_URL)
     session['oauth_state'] = state
@@ -37,21 +39,44 @@ def index():
 def callback():
     if 'client_id' not in session or 'client_secret' not in session:
         return redirect('/')
-    github = OAuth2Session(session['client_id'], state=session['oauth_state'])
-    token = github.fetch_token(TOKEN_URL, client_secret=session['client_secret'],
-                               authorization_response=request.url)
-    session['oauth_token'] = token
-    log.info(f"GitHub token retrieved successfully: {token}")
     
-    # Store token in a file with a timestamp
-    timestamp = datetime.datetime.now().timestamp()
-    filename = f"NEW_TOKEN_{timestamp}.txt"
-    with open(filename, "w") as file:
-        file.write(token['access_token'])
+    code = request.args.get('code')
+    state = request.args.get('state')
+
+    if state != session['oauth_state']:
+        return 'State mismatch error.', 400
     
-    log.info(f"New token saved to {filename}")
-    
-    return 'GitHub token retrieved successfully! You can close this window.'
+    token_endpoint = TOKEN_URL
+    redirect_url = "http://localhost:5000/callback"
+
+    data = {
+        "client_id": session['client_id'],
+        "client_secret": session['client_secret'],
+        "code": code,
+        "redirect_uri": redirect_url
+    }
+
+
+    try:
+        response = requests.post(token_endpoint, data=data, headers={"Accept": "application/json"})
+        token_response = response.json()
+
+        if 'access_token' in token_response:
+            token = token_response['access_token']
+            session['oauth_token'] = token
+            
+            # Create a new text file and add the token in it
+            timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+            filename = f"NEW_TOKEN_{timestamp}.txt"
+            with open(filename, "w") as file:
+                file.write(token)
+            
+            log.info(f"New token saved to {filename}")
+            return 'GitHub token retrieved successfully! You can close this window.'
+        else:
+            return 'Failed to get GitHub access token.', 400
+    except Exception as e:
+        return 'Failed to retrieve GitHub token.', 500
 
 
 @app.route('/reports')
@@ -77,13 +102,8 @@ def get_github_token():
 def main():
     setup_db_logging()
 
-    # Prompt for GitHub OAuth credentials
-    log.info("Getting GitHub OAuth credentials..")
-    log.info("Successfully got GitHub OAuth credentials")
-
     # Run Flask app to handle the OAuth flow
     log.info('Starting Flask server to handle GitHub OAuth...')
-    print('Starting Flask server to handle GitHub OAuth...')
     app.run(port=5000, debug=True)
 
 
