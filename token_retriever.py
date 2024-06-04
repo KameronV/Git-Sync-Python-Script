@@ -1,6 +1,7 @@
 import logging
 import os
 import datetime
+import webbrowser
 import requests
 
 from flask import Flask, request, jsonify, session, redirect, render_template
@@ -44,6 +45,7 @@ def callback():
     state = request.args.get('state')
 
     if state != session['oauth_state']:
+        log.error("State mismatch error.")
         return 'State mismatch error.', 400
     
     token_endpoint = TOKEN_URL
@@ -70,22 +72,27 @@ def callback():
             filename = f"NEW_TOKEN_{timestamp}.txt"
             with open(filename, "w") as file:
                 file.write(token)
+            os.chmod(filename, 0o400)  # Set file permissions to be readable only by the owner
             
-            log.info(f"New token saved to {filename}")
+            log.info(f"New token saved to {filename} with secure permissions.")
             return 'GitHub token retrieved successfully! You can close this window.'
         else:
+            log.error("Failed to get GitHub access token.")
             return 'Failed to get GitHub access token.', 400
     except Exception as e:
+        log.exception("Exception occurred while retrieving GitHub token.")
         return 'Failed to retrieve GitHub token.', 500
 
 
 @app.route('/reports')
 def reports():
+    log.info("Generating report from logs.")
     return render_template(REPORT_PAGE, logs=get_logs())
 
 
 @app.route('/logs')
 def logs():
+    log.info("Fetching logs.")
     return get_logs()
 
 
@@ -95,7 +102,7 @@ def get_github_token():
     client_secret = request.form['client_secret']
     session['client_id'] = client_id
     session['client_secret'] = client_secret
-
+    log.info("Received GitHub client credentials from form.")
     return redirect('/')
 
 
@@ -104,6 +111,10 @@ def main():
 
     # Run Flask app to handle the OAuth flow
     log.info('Starting Flask server to handle GitHub OAuth...')
+
+    # Open the web browser to the Flask app's index page
+    webbrowser.open("http://localhost:5000")
+    
     app.run(port=5000, debug=True)
 
 
